@@ -23,7 +23,9 @@ def test_stdio_server_lists_and_calls_tools(tmp_path: Path) -> None:
                 "read_policy",
                 "validate_requirement_record",
                 "validate_task_spec",
+                "preflight_store_task_spec",
                 "store_task_spec",
+                "initialize_confirmed_task_spec",
             }
             result = await client.call_tool(
                 "read_policy", {"policy_ref": "policy://intake-spec/default"}

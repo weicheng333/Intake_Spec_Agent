@@ -183,6 +183,77 @@ class IntakeSpecTools:
             result=summary,
         )
 
+    @staticmethod
+    def _parse_state_payload(
+        payload: dict[str, Any],
+    ) -> tuple[RequirementRecord, TaskSpec | None]:
+        requirement_record = RequirementRecord.model_validate(payload.get("requirement_record"))
+        raw_task_spec = payload.get("task_spec")
+        task_spec = None if raw_task_spec is None else TaskSpec.model_validate(raw_task_spec)
+        return requirement_record, task_spec
+
+    def preflight_store_task_spec(
+        self,
+        task_id: str,
+        payload: dict[str, Any],
+        expected_requirement_revision: int,
+        expected_task_spec_version: int,
+    ) -> ToolResponse:
+        """在写入前检查版本，并规范化由存储层拥有的内部引用。"""
+        try:
+            requirement_record, task_spec = self._parse_state_payload(payload)
+        except ValidationError as error:
+            return ToolResponse(
+                status="ERROR",
+                error_code="STATE_PAYLOAD_INVALID",
+                retryable=False,
+                issues=_validation_issues(error),
+            )
+        if requirement_record.task_id != task_id or (
+            task_spec is not None and task_spec.task_id != task_id
+        ):
+            return ToolResponse(
+                status="ERROR",
+                error_code="TASK_ID_MISMATCH",
+                retryable=False,
+                result={"message": "工具 task_id 与 payload task_id 不一致"},
+            )
+        try:
+            plan = self.repository.preflight_store(
+                requirement_record,
+                task_spec,
+                expected_requirement_revision=expected_requirement_revision,
+                expected_task_spec_version=expected_task_spec_version,
+            )
+        except StorageError as error:
+            return ToolResponse(
+                status="ERROR",
+                error_code=error.code,
+                retryable=error.retryable,
+                result={"message": error.message, "details": error.details},
+            )
+        result = {
+            "task_id": plan.task_id,
+            "current_requirement_revision": plan.current_requirement_revision,
+            "current_task_spec_version": plan.current_task_spec_version,
+            "required_requirement_revision": plan.required_requirement_revision,
+            "required_task_spec_version": plan.required_task_spec_version,
+            "required_previous_version_ref": plan.required_previous_version_ref,
+            "normalized_payload": {
+                "requirement_record": plan.normalized_requirement_record.model_dump(mode="json"),
+                "task_spec": (
+                    None
+                    if plan.normalized_task_spec is None
+                    else plan.normalized_task_spec.model_dump(mode="json")
+                ),
+            },
+        }
+        return ToolResponse(
+            status="SUCCESS",
+            evidence_ref=_evidence_ref("store-preflight", result),
+            result=result,
+        )
+
     def store_task_spec(
         self,
         task_id: str,
@@ -192,9 +263,7 @@ class IntakeSpecTools:
         expected_task_spec_version: int,
     ) -> ToolResponse:
         try:
-            requirement_record = RequirementRecord.model_validate(payload.get("requirement_record"))
-            raw_task_spec = payload.get("task_spec")
-            task_spec = None if raw_task_spec is None else TaskSpec.model_validate(raw_task_spec)
+            requirement_record, task_spec = self._parse_state_payload(payload)
         except ValidationError as error:
             return ToolResponse(
                 status="ERROR",
@@ -218,6 +287,61 @@ class IntakeSpecTools:
                 idempotency_key=idempotency_key,
                 expected_requirement_revision=expected_requirement_revision,
                 expected_task_spec_version=expected_task_spec_version,
+            )
+        except StorageError as error:
+            return ToolResponse(
+                status="ERROR",
+                error_code=error.code,
+                retryable=error.retryable,
+                receipt_ref=error.details.get("receipt_ref"),
+                result={"message": error.message, "details": error.details},
+            )
+        return ToolResponse(
+            status="SUCCESS",
+            receipt_ref=receipt.receipt_ref,
+            result={**receipt.as_dict(), "replayed": receipt.replayed},
+        )
+
+    def initialize_confirmed_task_spec(
+        self,
+        task_id: str,
+        reviewed_payload: dict[str, Any],
+        confirmed_payload: dict[str, Any],
+        idempotency_key: str,
+    ) -> ToolResponse:
+        """以一次授权原子保存新任务的 v1 受审状态和 v2 READY 状态。"""
+        try:
+            reviewed_requirement, reviewed_task_spec = self._parse_state_payload(reviewed_payload)
+            confirmed_requirement, confirmed_task_spec = self._parse_state_payload(
+                confirmed_payload
+            )
+        except ValidationError as error:
+            return ToolResponse(
+                status="ERROR",
+                error_code="STATE_PAYLOAD_INVALID",
+                retryable=False,
+                issues=_validation_issues(error),
+            )
+        states = (
+            reviewed_requirement,
+            reviewed_task_spec,
+            confirmed_requirement,
+            confirmed_task_spec,
+        )
+        if any(state is None or state.task_id != task_id for state in states):
+            return ToolResponse(
+                status="ERROR",
+                error_code="TASK_ID_MISMATCH",
+                retryable=False,
+                result={"message": "工具 task_id 与两个状态 payload 的 task_id 必须一致"},
+            )
+        try:
+            receipt = self.repository.initialize_confirmed_state(
+                reviewed_requirement,
+                reviewed_task_spec,
+                confirmed_requirement,
+                confirmed_task_spec,
+                idempotency_key=idempotency_key,
             )
         except StorageError as error:
             return ToolResponse(

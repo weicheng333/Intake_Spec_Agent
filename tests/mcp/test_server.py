@@ -8,7 +8,9 @@ EXPECTED_TOOLS = {
     "read_policy",
     "validate_requirement_record",
     "validate_task_spec",
+    "preflight_store_task_spec",
     "store_task_spec",
+    "initialize_confirmed_task_spec",
 }
 
 
@@ -29,6 +31,12 @@ def test_tool_schemas_are_typed(tmp_path: Path) -> None:
         "idempotency_key",
         "expected_requirement_revision",
         "expected_task_spec_version",
+    }
+    assert set(tools["initialize_confirmed_task_spec"].input_schema["required"]) == {
+        "task_id",
+        "reviewed_payload",
+        "confirmed_payload",
+        "idempotency_key",
     }
     assert tools["read_policy"].output_schema["properties"]["status"]["enum"] == [
         "SUCCESS",

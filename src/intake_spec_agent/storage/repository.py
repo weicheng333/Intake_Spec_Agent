@@ -37,6 +37,8 @@ class ToolReceipt:
     task_spec_ref: str | None
     replayed: bool
     created_at: str
+    stored_requirement_refs: list[str] | None = None
+    stored_task_spec_refs: list[str] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -46,6 +48,10 @@ class ToolReceipt:
             "requirement_record_ref": self.requirement_record_ref,
             "task_spec_ref": self.task_spec_ref,
             "created_at": self.created_at,
+            "stored_requirement_refs": self.stored_requirement_refs
+            or [self.requirement_record_ref],
+            "stored_task_spec_refs": self.stored_task_spec_refs
+            or ([] if self.task_spec_ref is None else [self.task_spec_ref]),
         }
 
 
@@ -53,6 +59,18 @@ class ToolReceipt:
 class StoredState:
     requirement_record: RequirementRecord
     task_spec: TaskSpec | None
+
+
+@dataclass(frozen=True)
+class StorePreflight:
+    task_id: str
+    current_requirement_revision: int
+    current_task_spec_version: int
+    required_requirement_revision: int
+    required_task_spec_version: int | None
+    required_previous_version_ref: str | None
+    normalized_requirement_record: RequirementRecord
+    normalized_task_spec: TaskSpec | None
 
 
 class TaskStateRepository:
@@ -92,6 +110,112 @@ class TaskStateRepository:
             (operation, task_id, idempotency_key),
         ).fetchone()
 
+    @staticmethod
+    def _validate_state(
+        requirement_record: RequirementRecord,
+        task_spec: TaskSpec | None,
+    ) -> tuple[RequirementRecord, TaskSpec | None]:
+        requirement_record = RequirementRecord.model_validate(
+            requirement_record.model_dump(mode="json")
+        )
+        task_spec = (
+            None
+            if task_spec is None
+            else TaskSpec.model_validate(task_spec.model_dump(mode="json"))
+        )
+        if task_spec is not None and task_spec.task_id != requirement_record.task_id:
+            raise StorageError("TASK_ID_MISMATCH", "RequirementRecord 与 TaskSpec 的 task_id 不一致")
+        return requirement_record, task_spec
+
+    @classmethod
+    def _prepare_state(
+        cls,
+        requirement_record: RequirementRecord,
+        task_spec: TaskSpec | None,
+        *,
+        expected_requirement_revision: int,
+        expected_task_spec_version: int,
+    ) -> tuple[RequirementRecord, TaskSpec | None]:
+        requirement_record, task_spec = cls._validate_state(requirement_record, task_spec)
+        if requirement_record.revision != expected_requirement_revision + 1:
+            raise StorageError(
+                "INVALID_NEXT_REVISION",
+                "RequirementRecord 必须追加连续 revision",
+                details={"required": expected_requirement_revision + 1},
+            )
+        if task_spec is None:
+            return requirement_record, None
+        if task_spec.version != expected_task_spec_version + 1:
+            raise StorageError(
+                "INVALID_NEXT_VERSION",
+                "TaskSpec 必须追加连续 version",
+                details={"required": expected_task_spec_version + 1},
+            )
+
+        required_previous = (
+            None
+            if expected_task_spec_version == 0
+            else f"taskspec://{task_spec.task_id}/v{expected_task_spec_version}"
+        )
+        normalized = TaskSpec.model_validate(
+            task_spec.model_copy(
+                update={
+                    "requirement_record_ref": (
+                        f"requirement://{requirement_record.task_id}/v{requirement_record.revision}"
+                    ),
+                    "previous_version_ref": required_previous,
+                }
+            ).model_dump(mode="json")
+        )
+        return requirement_record, normalized
+
+    def preflight_store(
+        self,
+        requirement_record: RequirementRecord,
+        task_spec: TaskSpec | None,
+        *,
+        expected_requirement_revision: int,
+        expected_task_spec_version: int,
+    ) -> StorePreflight:
+        requirement_record, task_spec = self._validate_state(requirement_record, task_spec)
+        with self.database.connect() as connection:
+            current_requirement = self._current_version(
+                connection, "requirement_records", "revision", requirement_record.task_id
+            )
+            current_task_spec = self._current_version(
+                connection, "task_specs", "version", requirement_record.task_id
+            )
+        if current_requirement != expected_requirement_revision:
+            raise StorageError(
+                "REVISION_CONFLICT",
+                "RequirementRecord 当前 revision 与 expected revision 不一致",
+                details={"expected": expected_requirement_revision, "actual": current_requirement},
+            )
+        if current_task_spec != expected_task_spec_version:
+            raise StorageError(
+                "VERSION_CONFLICT",
+                "TaskSpec 当前 version 与 expected version 不一致",
+                details={"expected": expected_task_spec_version, "actual": current_task_spec},
+            )
+        requirement_record, task_spec = self._prepare_state(
+            requirement_record,
+            task_spec,
+            expected_requirement_revision=expected_requirement_revision,
+            expected_task_spec_version=expected_task_spec_version,
+        )
+        return StorePreflight(
+            task_id=requirement_record.task_id,
+            current_requirement_revision=current_requirement,
+            current_task_spec_version=current_task_spec,
+            required_requirement_revision=requirement_record.revision,
+            required_task_spec_version=None if task_spec is None else task_spec.version,
+            required_previous_version_ref=(
+                None if task_spec is None else task_spec.previous_version_ref
+            ),
+            normalized_requirement_record=requirement_record,
+            normalized_task_spec=task_spec,
+        )
+
     def store_state(
         self,
         requirement_record: RequirementRecord,
@@ -101,18 +225,9 @@ class TaskStateRepository:
         expected_requirement_revision: int,
         expected_task_spec_version: int,
     ) -> ToolReceipt:
-        requirement_record = RequirementRecord.model_validate(
-            requirement_record.model_dump(mode="json")
-        )
-        task_spec = (
-            None
-            if task_spec is None
-            else TaskSpec.model_validate(task_spec.model_dump(mode="json"))
-        )
         if not idempotency_key.strip() or len(idempotency_key) > 200:
             raise StorageError("INVALID_IDEMPOTENCY_KEY", "idempotency key 长度必须为 1–200")
-        if task_spec is not None and task_spec.task_id != requirement_record.task_id:
-            raise StorageError("TASK_ID_MISMATCH", "RequirementRecord 与 TaskSpec 的 task_id 不一致")
+        requirement_record, task_spec = self._validate_state(requirement_record, task_spec)
 
         request = {
             "requirement_record": requirement_record.model_dump(mode="json"),
@@ -158,31 +273,12 @@ class TaskStateRepository:
                     "TaskSpec 当前 version 与 expected version 不一致",
                     details={"expected": expected_task_spec_version, "actual": current_task_spec},
                 )
-            if requirement_record.revision != current_requirement + 1:
-                raise StorageError(
-                    "INVALID_NEXT_REVISION",
-                    "RequirementRecord 必须追加连续 revision",
-                    details={"required": current_requirement + 1},
-                )
-            if task_spec is not None:
-                if task_spec.version != current_task_spec + 1:
-                    raise StorageError(
-                        "INVALID_NEXT_VERSION",
-                        "TaskSpec 必须追加连续 version",
-                        details={"required": current_task_spec + 1},
-                    )
-                expected_previous = (
-                    None
-                    if current_task_spec == 0
-                    else f"taskspec://{task_spec.task_id}/v{current_task_spec}"
-                )
-                if task_spec.previous_version_ref != expected_previous:
-                    raise StorageError(
-                        "INVALID_PREVIOUS_VERSION_REF",
-                        "TaskSpec previous_version_ref 必须指向当前版本",
-                        details={"required": expected_previous},
-                    )
-
+            requirement_record, task_spec = self._prepare_state(
+                requirement_record,
+                task_spec,
+                expected_requirement_revision=current_requirement,
+                expected_task_spec_version=current_task_spec,
+            )
             timestamp = self.now()
             connection.execute(
                 """
@@ -236,6 +332,10 @@ class TaskStateRepository:
                 ),
                 "task_spec_ref": task_spec_ref,
                 "created_at": timestamp,
+                "stored_requirement_refs": [
+                    f"requirement://{requirement_record.task_id}/v{requirement_record.revision}"
+                ],
+                "stored_task_spec_refs": [] if task_spec_ref is None else [task_spec_ref],
             }
             connection.execute(
                 """
@@ -269,6 +369,168 @@ class TaskStateRepository:
             connection.rollback()
             raise StorageError(
                 "INTERNAL_STORAGE_ERROR", "存储事务未完成", retryable=False
+            ) from error
+        finally:
+            connection.close()
+
+    def initialize_confirmed_state(
+        self,
+        reviewed_requirement: RequirementRecord,
+        reviewed_task_spec: TaskSpec,
+        confirmed_requirement: RequirementRecord,
+        confirmed_task_spec: TaskSpec,
+        *,
+        idempotency_key: str,
+    ) -> ToolReceipt:
+        """用一个授权和事务保存新任务的受审 v1 与 READY v2。"""
+        if not idempotency_key.strip() or len(idempotency_key) > 200:
+            raise StorageError("INVALID_IDEMPOTENCY_KEY", "idempotency key 长度必须为 1–200")
+        reviewed_requirement, reviewed_task_spec = self._prepare_state(
+            reviewed_requirement,
+            reviewed_task_spec,
+            expected_requirement_revision=0,
+            expected_task_spec_version=0,
+        )
+        confirmed_requirement, confirmed_task_spec = self._prepare_state(
+            confirmed_requirement,
+            confirmed_task_spec,
+            expected_requirement_revision=1,
+            expected_task_spec_version=1,
+        )
+        if reviewed_requirement.task_id != confirmed_requirement.task_id:
+            raise StorageError("TASK_ID_MISMATCH", "受审状态与确认状态的 task_id 不一致")
+        if reviewed_requirement.status == "READY" or reviewed_requirement.final_confirmation is not None:
+            raise StorageError("INVALID_REVIEWED_STATE", "受审 revision 1 必须是未确认状态")
+        if reviewed_task_spec.status != "DRAFT":
+            raise StorageError("INVALID_REVIEWED_STATE", "受审 TaskSpec version 1 必须是 DRAFT")
+        if confirmed_requirement.status != "READY" or confirmed_task_spec.status != "READY_FOR_PLANNING":
+            raise StorageError("INVALID_CONFIRMED_STATE", "确认状态必须进入 READY/READY_FOR_PLANNING")
+        confirmation = confirmed_requirement.final_confirmation
+        if confirmation is None or (
+            confirmation.reviewed_revision != 1 or confirmation.confirmed_revision != 2
+        ):
+            raise StorageError("INVALID_CONFIRMATION_LINK", "最终核验必须从 revision 1 晋级到 revision 2")
+
+        operation = "initialize_confirmed_task_spec"
+        request = {
+            "reviewed_requirement": reviewed_requirement.model_dump(mode="json"),
+            "reviewed_task_spec": reviewed_task_spec.model_dump(mode="json"),
+            "confirmed_requirement": confirmed_requirement.model_dump(mode="json"),
+            "confirmed_task_spec": confirmed_task_spec.model_dump(mode="json"),
+        }
+        request_hash = _sha256(_canonical_json(request))
+        task_id = reviewed_requirement.task_id
+        connection = self.database.connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = self._existing_receipt(connection, operation, task_id, idempotency_key)
+            if existing is not None:
+                if existing["request_hash"] != request_hash:
+                    raise StorageError(
+                        "IDEMPOTENCY_CONFLICT",
+                        "相同 idempotency key 已用于不同 payload",
+                        details={"receipt_ref": f"receipt://{existing['receipt_id']}"},
+                    )
+                response = json.loads(existing["response_json"])
+                connection.rollback()
+                return ToolReceipt(**response, replayed=True)
+            current_requirement = self._current_version(
+                connection, "requirement_records", "revision", task_id
+            )
+            current_task_spec = self._current_version(
+                connection, "task_specs", "version", task_id
+            )
+            if current_requirement != 0 or current_task_spec != 0:
+                raise StorageError(
+                    "TASK_ALREADY_INITIALIZED",
+                    "原子初始化只适用于尚未持久化的新任务",
+                    details={
+                        "current_requirement_revision": current_requirement,
+                        "current_task_spec_version": current_task_spec,
+                    },
+                )
+
+            timestamp = self.now()
+            connection.execute(
+                "INSERT INTO tasks(task_id, created_at, updated_at) VALUES (?, ?, ?)",
+                (task_id, timestamp, timestamp),
+            )
+            for requirement in (reviewed_requirement, confirmed_requirement):
+                payload_json = _canonical_json(requirement.model_dump(mode="json"))
+                connection.execute(
+                    """
+                    INSERT INTO requirement_records(task_id, revision, payload_json, payload_hash, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (task_id, requirement.revision, payload_json, _sha256(payload_json), timestamp),
+                )
+            for spec in (reviewed_task_spec, confirmed_task_spec):
+                payload_json = _canonical_json(spec.model_dump(mode="json"))
+                connection.execute(
+                    """
+                    INSERT INTO task_specs(
+                        task_id, version, previous_version, payload_json, payload_hash, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        task_id,
+                        spec.version,
+                        None if spec.version == 1 else spec.version - 1,
+                        payload_json,
+                        _sha256(payload_json),
+                        timestamp,
+                    ),
+                )
+
+            receipt_id = self.new_receipt_id()
+            response = {
+                "receipt_ref": f"receipt://{receipt_id}",
+                "operation": operation,
+                "task_id": task_id,
+                "requirement_record_ref": f"requirement://{task_id}/v2",
+                "task_spec_ref": f"taskspec://{task_id}/v2",
+                "created_at": timestamp,
+                "stored_requirement_refs": [
+                    f"requirement://{task_id}/v1",
+                    f"requirement://{task_id}/v2",
+                ],
+                "stored_task_spec_refs": [
+                    f"taskspec://{task_id}/v1",
+                    f"taskspec://{task_id}/v2",
+                ],
+            }
+            connection.execute(
+                """
+                INSERT INTO tool_receipts(
+                    receipt_id, operation, task_id, idempotency_key,
+                    request_hash, response_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    receipt_id,
+                    operation,
+                    task_id,
+                    idempotency_key,
+                    request_hash,
+                    _canonical_json(response),
+                    timestamp,
+                ),
+            )
+            connection.commit()
+            return ToolReceipt(**response, replayed=False)
+        except StorageError:
+            connection.rollback()
+            raise
+        except sqlite3.OperationalError as error:
+            connection.rollback()
+            raise StorageError("DATABASE_BUSY", str(error), retryable=True) from error
+        except sqlite3.DatabaseError as error:
+            connection.rollback()
+            raise StorageError("DATABASE_ERROR", str(error), retryable=False) from error
+        except Exception as error:
+            connection.rollback()
+            raise StorageError(
+                "INTERNAL_STORAGE_ERROR", "原子初始化事务未完成", retryable=False
             ) from error
         finally:
             connection.close()

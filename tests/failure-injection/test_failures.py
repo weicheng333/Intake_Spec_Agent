@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from intake_spec_agent.contracts import RequirementRecord
+from intake_spec_agent.contracts import RequirementRecord, TaskSpec
 from intake_spec_agent.mcp_server import IntakeSpecTools
 from intake_spec_agent.storage import Database, StorageError, TaskStateRepository
 
@@ -69,3 +69,36 @@ def test_invalid_idempotency_key_fails_before_write(
             expected_task_spec_version=0,
         )
     assert error.value.code == "INVALID_IDEMPOTENCY_KEY"
+
+
+def test_atomic_initialization_rolls_back_both_versions_on_receipt_failure(
+    tmp_path: Path,
+    ready_requirement_payload: dict,
+    ready_task_spec_payload: dict,
+) -> None:
+    reviewed_requirement = deepcopy(ready_requirement_payload)
+    reviewed_requirement["revision"] = 1
+    reviewed_requirement["status"] = "CLARIFYING"
+    reviewed_requirement["final_confirmation"] = None
+    reviewed_spec = deepcopy(ready_task_spec_payload)
+    reviewed_spec["status"] = "DRAFT"
+    confirmed_spec = deepcopy(ready_task_spec_payload)
+    confirmed_spec["version"] = 2
+    confirmed_spec["previous_version_ref"] = "evidence://temporary/reviewed"
+    repository = TaskStateRepository(
+        Database(tmp_path / "state.sqlite3"),
+        new_receipt_id=lambda: (_ for _ in ()).throw(RuntimeError("injected failure")),
+    )
+
+    with pytest.raises(StorageError) as error:
+        repository.initialize_confirmed_state(
+            RequirementRecord.model_validate(reviewed_requirement),
+            TaskSpec.model_validate(reviewed_spec),
+            RequirementRecord.model_validate(ready_requirement_payload),
+            TaskSpec.model_validate(confirmed_spec),
+            idempotency_key="atomic-injected-failure",
+        )
+    assert error.value.code == "INTERNAL_STORAGE_ERROR"
+    with pytest.raises(StorageError) as missing:
+        repository.get_state("TASK-DEMO-001")
+    assert missing.value.code == "TASK_NOT_FOUND"

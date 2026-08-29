@@ -27,6 +27,30 @@ def _ready_payload(ready_requirement_payload: dict, ready_task_spec_payload: dic
     }
 
 
+def _confirmed_v2_payload(
+    ready_requirement_payload: dict, ready_task_spec_payload: dict
+) -> dict:
+    task_spec = deepcopy(ready_task_spec_payload)
+    task_spec["version"] = 2
+    task_spec["previous_version_ref"] = "evidence://temporary/reviewed"
+    return {
+        "requirement_record": deepcopy(ready_requirement_payload),
+        "task_spec": task_spec,
+    }
+
+
+def _reviewed_v1_payload(
+    ready_requirement_payload: dict, ready_task_spec_payload: dict
+) -> dict:
+    requirement = deepcopy(ready_requirement_payload)
+    requirement["revision"] = 1
+    requirement["status"] = "CLARIFYING"
+    requirement["final_confirmation"] = None
+    task_spec = deepcopy(ready_task_spec_payload)
+    task_spec["status"] = "DRAFT"
+    return {"requirement_record": requirement, "task_spec": task_spec}
+
+
 def test_validate_requirement_record_returns_structured_evidence(
     tools: IntakeSpecTools, ready_requirement_payload: dict
 ) -> None:
@@ -117,3 +141,52 @@ def test_read_context_validates_task_id(tools: IntakeSpecTools) -> None:
     response = tools.read_task_context("../secret")
     assert response.status == "ERROR"
     assert response.error_code == "INVALID_TASK_ID"
+
+
+def test_preflight_returns_normalized_formal_references(
+    tools: IntakeSpecTools,
+    ready_requirement_payload: dict,
+    ready_task_spec_payload: dict,
+) -> None:
+    reviewed = _reviewed_v1_payload(ready_requirement_payload, ready_task_spec_payload)
+    tools.store_task_spec("TASK-DEMO-001", reviewed, "reviewed", 0, 0)
+
+    response = tools.preflight_store_task_spec(
+        "TASK-DEMO-001",
+        _confirmed_v2_payload(ready_requirement_payload, ready_task_spec_payload),
+        1,
+        1,
+    )
+
+    assert response.status == "SUCCESS"
+    assert response.evidence_ref is not None
+    assert response.result is not None
+    assert response.result["required_previous_version_ref"] == "taskspec://TASK-DEMO-001/v1"
+    assert (
+        response.result["normalized_payload"]["task_spec"]["previous_version_ref"]
+        == "taskspec://TASK-DEMO-001/v1"
+    )
+
+
+def test_initialize_confirmed_task_spec_uses_one_atomic_call(
+    tools: IntakeSpecTools,
+    ready_requirement_payload: dict,
+    ready_task_spec_payload: dict,
+) -> None:
+    response = tools.initialize_confirmed_task_spec(
+        "TASK-DEMO-001",
+        _reviewed_v1_payload(ready_requirement_payload, ready_task_spec_payload),
+        _confirmed_v2_payload(ready_requirement_payload, ready_task_spec_payload),
+        "confirmed-once",
+    )
+    context = tools.read_task_context("TASK-DEMO-001")
+
+    assert response.status == "SUCCESS"
+    assert response.result is not None
+    assert response.result["stored_task_spec_refs"] == [
+        "taskspec://TASK-DEMO-001/v1",
+        "taskspec://TASK-DEMO-001/v2",
+    ]
+    assert context.result is not None
+    assert context.result["requirement_record"]["revision"] == 2
+    assert context.result["task_spec"]["version"] == 2

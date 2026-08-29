@@ -25,6 +25,7 @@ Intake & Spec Agent 是一个面向 Codex 的本地需求入口。它负责把�
 - 本地 STDIO MCP
 - RequirementRecord 与 TaskSpec 数据契约
 - SQLite 版本、幂等、回执和回退
+- 写入预检、正式引用规范化，以及新任务受审 v1 → READY v2 的原子初始化
 - 面向未来 Planner 的 typed handoff 契约
 - 全局及项目级安全安装与卸载
 
@@ -45,6 +46,8 @@ Intake & Spec Agent 是一个面向 Codex 的本地需求入口。它负责把�
 - `NEEDS_INPUT`：仍有会改变范围、合法性、关键验收或不可逆路径的阻塞问题。
 - `PENDING_CONFIRMATION`：规格结构完整，等待用户核验当前 revision 和 checksum。
 - `READY`：用户已核验，确定性校验和版本化保存成功，可以交给 Planner；不代表业务任务已经执行。
+
+从 `1.1.0` 起，验证 evidence 与持久化 receipt 明确分离。新任务在用户确认后通过一次原子调用同时保存受审 v1 和 READY v2；已有任务写入前先预检当前版本。TaskSpec 的 `requirement_record_ref` 和 `previous_version_ref` 由存储层规范化为正式地址，内部引用修复不会再要求用户重复确认。
 
 ## 安装与卸载
 

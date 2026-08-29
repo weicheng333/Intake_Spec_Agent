@@ -29,6 +29,25 @@ def _draft_and_ready(ready_requirement_payload: dict, ready_task_spec_payload: d
     )
 
 
+def _reviewed_and_confirmed(ready_requirement_payload: dict, ready_task_spec_payload: dict):
+    reviewed_requirement = deepcopy(ready_requirement_payload)
+    reviewed_requirement["revision"] = 1
+    reviewed_requirement["status"] = "CLARIFYING"
+    reviewed_requirement["final_confirmation"] = None
+    reviewed_spec = deepcopy(ready_task_spec_payload)
+    reviewed_spec["status"] = "DRAFT"
+    reviewed_spec["requirement_record_ref"] = "evidence://temporary/reviewed"
+    confirmed_spec = deepcopy(ready_task_spec_payload)
+    confirmed_spec["version"] = 2
+    confirmed_spec["previous_version_ref"] = "evidence://temporary/task-spec-v1"
+    return (
+        RequirementRecord.model_validate(reviewed_requirement),
+        TaskSpec.model_validate(reviewed_spec),
+        RequirementRecord.model_validate(ready_requirement_payload),
+        TaskSpec.model_validate(confirmed_spec),
+    )
+
+
 def test_store_and_read_state(
     repository: TaskStateRepository,
     ready_requirement_payload: dict,
@@ -185,3 +204,86 @@ def test_append_and_restore_create_new_versions(
     assert latest.task_spec.objective == task_spec.objective
     assert latest.task_spec.previous_version_ref == "taskspec://TASK-DEMO-001/v2"
     assert old.task_spec is not None and old.task_spec.objective == "第二版目标"
+
+
+def test_preflight_normalizes_storage_owned_references(
+    repository: TaskStateRepository,
+    ready_requirement_payload: dict,
+    ready_task_spec_payload: dict,
+) -> None:
+    reviewed_requirement, reviewed_spec, confirmed_requirement, confirmed_spec = (
+        _reviewed_and_confirmed(ready_requirement_payload, ready_task_spec_payload)
+    )
+    repository.store_state(
+        reviewed_requirement,
+        reviewed_spec,
+        idempotency_key="reviewed",
+        expected_requirement_revision=0,
+        expected_task_spec_version=0,
+    )
+
+    plan = repository.preflight_store(
+        confirmed_requirement,
+        confirmed_spec,
+        expected_requirement_revision=1,
+        expected_task_spec_version=1,
+    )
+
+    assert plan.required_previous_version_ref == "taskspec://TASK-DEMO-001/v1"
+    assert plan.normalized_task_spec is not None
+    assert plan.normalized_task_spec.previous_version_ref == "taskspec://TASK-DEMO-001/v1"
+    assert (
+        plan.normalized_task_spec.requirement_record_ref
+        == "requirement://TASK-DEMO-001/v2"
+    )
+
+
+def test_initialize_confirmed_state_atomically_stores_v1_and_v2(
+    repository: TaskStateRepository,
+    ready_requirement_payload: dict,
+    ready_task_spec_payload: dict,
+) -> None:
+    states = _reviewed_and_confirmed(ready_requirement_payload, ready_task_spec_payload)
+    receipt = repository.initialize_confirmed_state(*states, idempotency_key="initialize")
+    replayed = repository.initialize_confirmed_state(*states, idempotency_key="initialize")
+
+    assert receipt.requirement_record_ref == "requirement://TASK-DEMO-001/v2"
+    assert receipt.task_spec_ref == "taskspec://TASK-DEMO-001/v2"
+    assert receipt.stored_requirement_refs == [
+        "requirement://TASK-DEMO-001/v1",
+        "requirement://TASK-DEMO-001/v2",
+    ]
+    assert replayed.replayed is True
+    reviewed = repository.get_state(
+        "TASK-DEMO-001", requirement_revision=1, task_spec_version=1
+    )
+    ready = repository.get_state("TASK-DEMO-001")
+    assert reviewed.requirement_record.status == "CLARIFYING"
+    assert reviewed.task_spec is not None and reviewed.task_spec.status == "DRAFT"
+    assert ready.requirement_record.status == "READY"
+    assert ready.task_spec is not None and ready.task_spec.version == 2
+    assert ready.task_spec.previous_version_ref == "taskspec://TASK-DEMO-001/v1"
+
+
+def test_initialize_rejects_invalid_confirmed_state_without_partial_write(
+    repository: TaskStateRepository,
+    ready_requirement_payload: dict,
+    ready_task_spec_payload: dict,
+) -> None:
+    reviewed_requirement, reviewed_spec, confirmed_requirement, confirmed_spec = (
+        _reviewed_and_confirmed(ready_requirement_payload, ready_task_spec_payload)
+    )
+    invalid_spec = confirmed_spec.model_copy(update={"status": "DRAFT"})
+
+    with pytest.raises(StorageError) as error:
+        repository.initialize_confirmed_state(
+            reviewed_requirement,
+            reviewed_spec,
+            confirmed_requirement,
+            invalid_spec,
+            idempotency_key="invalid-initialize",
+        )
+    assert error.value.code == "INVALID_CONFIRMED_STATE"
+    with pytest.raises(StorageError) as missing:
+        repository.get_state("TASK-DEMO-001")
+    assert missing.value.code == "TASK_NOT_FOUND"

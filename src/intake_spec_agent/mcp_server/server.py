@@ -46,6 +46,21 @@ def create_server(database_path: Path | str | None = None) -> MCPServer:
         return tools.validate_task_spec(payload)
 
     @server.tool()
+    def preflight_store_task_spec(
+        task_id: str,
+        payload: dict[str, Any],
+        expected_requirement_revision: int,
+        expected_task_spec_version: int,
+    ) -> ToolResponse:
+        """写入前检查真实版本，并返回规范化后的正式内部引用。"""
+        return tools.preflight_store_task_spec(
+            task_id,
+            payload,
+            expected_requirement_revision,
+            expected_task_spec_version,
+        )
+
+    @server.tool()
     def store_task_spec(
         task_id: str,
         payload: dict[str, Any],
@@ -60,6 +75,21 @@ def create_server(database_path: Path | str | None = None) -> MCPServer:
             idempotency_key,
             expected_requirement_revision,
             expected_task_spec_version,
+        )
+
+    @server.tool()
+    def initialize_confirmed_task_spec(
+        task_id: str,
+        reviewed_payload: dict[str, Any],
+        confirmed_payload: dict[str, Any],
+        idempotency_key: str,
+    ) -> ToolResponse:
+        """一次原子事务保存新任务的受审 v1 与已确认 READY v2。"""
+        return tools.initialize_confirmed_task_spec(
+            task_id,
+            reviewed_payload,
+            confirmed_payload,
+            idempotency_key,
         )
 
     return server
