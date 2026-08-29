@@ -1,0 +1,581 @@
+{
+  "$defs": {
+    "AcceptanceCriterion": {
+      "additionalProperties": false,
+      "properties": {
+        "critical": {
+          "default": false,
+          "title": "Critical",
+          "type": "boolean"
+        },
+        "evidence_requirement_ids": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_-]{1,63}$",
+            "type": "string"
+          },
+          "title": "Evidence Requirement Ids",
+          "type": "array"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{1,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "observable_outcome": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Observable Outcome",
+          "type": "string"
+        },
+        "statement": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "verification_method": {
+          "$ref": "#/$defs/VerificationMethod"
+        }
+      },
+      "required": [
+        "id",
+        "statement",
+        "observable_outcome",
+        "verification_method"
+      ],
+      "title": "AcceptanceCriterion",
+      "type": "object"
+    },
+    "Budget": {
+      "additionalProperties": false,
+      "properties": {
+        "deadline_ms": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deadline Ms"
+        },
+        "max_cost": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Cost"
+        },
+        "max_tokens": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Tokens"
+        },
+        "max_tool_calls": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Tool Calls"
+        }
+      },
+      "title": "Budget",
+      "type": "object"
+    },
+    "Deliverable": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance_criterion_ids": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_-]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Acceptance Criterion Ids",
+          "type": "array"
+        },
+        "artifact_type": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Artifact Type",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{1,63}$",
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "artifact_type",
+        "acceptance_criterion_ids"
+      ],
+      "title": "Deliverable",
+      "type": "object"
+    },
+    "EvidenceRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptable_evidence": {
+          "items": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Acceptable Evidence",
+          "type": "array"
+        },
+        "acceptance_criterion_ids": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_-]{1,63}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Acceptance Criterion Ids",
+          "type": "array"
+        },
+        "description": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{1,63}$",
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "acceptable_evidence",
+        "acceptance_criterion_ids"
+      ],
+      "title": "EvidenceRequirement",
+      "type": "object"
+    },
+    "PermissionBoundary": {
+      "additionalProperties": false,
+      "properties": {
+        "denied": {
+          "items": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Denied",
+          "type": "array"
+        },
+        "granted": {
+          "items": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Granted",
+          "type": "array"
+        },
+        "requires_approval": {
+          "items": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Requires Approval",
+          "type": "array"
+        }
+      },
+      "title": "PermissionBoundary",
+      "type": "object"
+    },
+    "RetryLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_agent_hops": {
+          "default": 12,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Agent Hops",
+          "type": "integer"
+        },
+        "max_replans": {
+          "default": 2,
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Max Replans",
+          "type": "integer"
+        },
+        "max_same_agent_retries": {
+          "default": 2,
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Max Same Agent Retries",
+          "type": "integer"
+        },
+        "max_schema_retries": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Max Schema Retries",
+          "type": "integer"
+        },
+        "max_verifier_cycles": {
+          "default": 2,
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Max Verifier Cycles",
+          "type": "integer"
+        }
+      },
+      "title": "RetryLimits",
+      "type": "object"
+    },
+    "Risk": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{1,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "impact": {
+          "$ref": "#/$defs/RiskLevel"
+        },
+        "likelihood": {
+          "$ref": "#/$defs/RiskLevel"
+        },
+        "mitigation": {
+          "anyOf": [
+            {
+              "maxLength": 8000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mitigation"
+        },
+        "statement": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "statement",
+        "likelihood",
+        "impact"
+      ],
+      "title": "Risk",
+      "type": "object"
+    },
+    "RiskLevel": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "RiskLevel",
+      "type": "string"
+    },
+    "Scope": {
+      "additionalProperties": false,
+      "properties": {
+        "excluded": {
+          "items": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Excluded",
+          "type": "array"
+        },
+        "included": {
+          "items": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Included",
+          "type": "array"
+        }
+      },
+      "title": "Scope",
+      "type": "object"
+    },
+    "TaskSpecStatus": {
+      "enum": [
+        "DRAFT",
+        "BLOCKED",
+        "READY_FOR_PLANNING",
+        "SUPERSEDED"
+      ],
+      "title": "TaskSpecStatus",
+      "type": "string"
+    },
+    "UnknownItem": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9_-]{1,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "impact": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Impact",
+          "type": "string"
+        },
+        "primary_dimension": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Primary Dimension",
+          "type": "string"
+        },
+        "question": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "related_dimensions": {
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Related Dimensions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "impact",
+        "primary_dimension"
+      ],
+      "title": "UnknownItem",
+      "type": "object"
+    },
+    "VerificationMethod": {
+      "enum": [
+        "automated",
+        "manual",
+        "inspection"
+      ],
+      "title": "VerificationMethod",
+      "type": "string"
+    }
+  },
+  "$id": "https://schemas.intake-spec-agent.local/v1/task-spec.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptance_criteria": {
+      "items": {
+        "$ref": "#/$defs/AcceptanceCriterion"
+      },
+      "title": "Acceptance Criteria",
+      "type": "array"
+    },
+    "allowed_actions": {
+      "items": {
+        "maxLength": 8000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Allowed Actions",
+      "type": "array"
+    },
+    "assumptions": {
+      "items": {
+        "maxLength": 8000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "blocking_unknowns": {
+      "items": {
+        "$ref": "#/$defs/UnknownItem"
+      },
+      "title": "Blocking Unknowns",
+      "type": "array"
+    },
+    "budget": {
+      "$ref": "#/$defs/Budget"
+    },
+    "constraints": {
+      "items": {
+        "maxLength": 8000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Constraints",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "deadline": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Deadline"
+    },
+    "deliverables": {
+      "items": {
+        "$ref": "#/$defs/Deliverable"
+      },
+      "title": "Deliverables",
+      "type": "array"
+    },
+    "evidence_requirements": {
+      "items": {
+        "$ref": "#/$defs/EvidenceRequirement"
+      },
+      "title": "Evidence Requirements",
+      "type": "array"
+    },
+    "handoff_target": {
+      "const": "planner_orchestrator",
+      "default": "planner_orchestrator",
+      "title": "Handoff Target",
+      "type": "string"
+    },
+    "objective": {
+      "maxLength": 8000,
+      "minLength": 1,
+      "title": "Objective",
+      "type": "string"
+    },
+    "permissions": {
+      "$ref": "#/$defs/PermissionBoundary"
+    },
+    "previous_version_ref": {
+      "anyOf": [
+        {
+          "maxLength": 1024,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9+.-]*://[^\\s]+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Version Ref"
+    },
+    "prohibited_actions": {
+      "items": {
+        "maxLength": 8000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Prohibited Actions",
+      "type": "array"
+    },
+    "requirement_record_ref": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9+.-]*://[^\\s]+$",
+      "title": "Requirement Record Ref",
+      "type": "string"
+    },
+    "retry_limits": {
+      "$ref": "#/$defs/RetryLimits"
+    },
+    "risks": {
+      "items": {
+        "$ref": "#/$defs/Risk"
+      },
+      "title": "Risks",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope": {
+      "$ref": "#/$defs/Scope"
+    },
+    "status": {
+      "$ref": "#/$defs/TaskSpecStatus"
+    },
+    "task_id": {
+      "pattern": "^TASK-[A-Z0-9][A-Z0-9_-]{2,63}$",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "version": {
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "task_id",
+    "version",
+    "status",
+    "objective",
+    "scope",
+    "requirement_record_ref",
+    "created_at"
+  ],
+  "title": "TaskSpec",
+  "type": "object"
+}

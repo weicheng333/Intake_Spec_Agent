@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intake-spec-agent"
+version = "1.0.0"
+description = "面向 Codex 的需求接收与可执行规格生成 Agent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=2.0,<3.0",
+  "pydantic>=2.10,<3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pyyaml>=6.0,<7.0",
+  "pytest>=8.0,<9.0",
+]
+
+[project.scripts]
+intake-spec-agent = "intake_spec_agent.__main__:main"
+intake-spec-export-schemas = "intake_spec_agent.contracts.export_schemas:main"
+intake-spec-mcp = "intake_spec_agent.mcp_server.server:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+pythonpath = ["src"]

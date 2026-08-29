@@ -1,0 +1,6 @@
+interface:
+  display_name: "Intake & Spec Agent"
+  short_description: "将原始需求整理为可核验、可交给 Planner 的任务规格"
+  default_prompt: "使用 $intake-spec 澄清这个请求，并生成可验证、可交接的 TaskSpec。"
+policy:
+  allow_implicit_invocation: true

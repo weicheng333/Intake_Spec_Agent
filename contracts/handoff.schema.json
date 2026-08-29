@@ -1,0 +1,393 @@
+{
+  "$defs": {
+    "AgentStatus": {
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "BLOCKED",
+        "SUCCEEDED",
+        "FAILED",
+        "ESCALATED"
+      ],
+      "title": "AgentStatus",
+      "type": "string"
+    },
+    "Budget": {
+      "additionalProperties": false,
+      "properties": {
+        "deadline_ms": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deadline Ms"
+        },
+        "max_cost": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Cost"
+        },
+        "max_tokens": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Tokens"
+        },
+        "max_tool_calls": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Tool Calls"
+        }
+      },
+      "title": "Budget",
+      "type": "object"
+    },
+    "ErrorDetail": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "message": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "title": "ErrorDetail",
+      "type": "object"
+    },
+    "FailurePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "permission_denied_action": {
+          "const": "REQUEST_APPROVAL",
+          "default": "REQUEST_APPROVAL",
+          "title": "Permission Denied Action",
+          "type": "string"
+        },
+        "retry_limits": {
+          "$ref": "#/$defs/RetryLimits"
+        },
+        "semantic_failure_action": {
+          "const": "REQUEST_REPLAN",
+          "default": "REQUEST_REPLAN",
+          "title": "Semantic Failure Action",
+          "type": "string"
+        },
+        "terminal_failure_action": {
+          "const": "ESCALATE_TO_HUMAN",
+          "default": "ESCALATE_TO_HUMAN",
+          "title": "Terminal Failure Action",
+          "type": "string"
+        }
+      },
+      "title": "FailurePolicy",
+      "type": "object"
+    },
+    "MessageType": {
+      "enum": [
+        "TASK",
+        "RESULT",
+        "EVIDENCE",
+        "REVISION_REQUEST",
+        "APPROVAL_REQUEST",
+        "APPROVAL_RESULT",
+        "ERROR",
+        "STATUS"
+      ],
+      "title": "MessageType",
+      "type": "string"
+    },
+    "RecipientRole": {
+      "enum": [
+        "intake_spec",
+        "planner_orchestrator",
+        "research",
+        "executor",
+        "verifier",
+        "human"
+      ],
+      "title": "RecipientRole",
+      "type": "string"
+    },
+    "RetryLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_agent_hops": {
+          "default": 12,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Agent Hops",
+          "type": "integer"
+        },
+        "max_replans": {
+          "default": 2,
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Max Replans",
+          "type": "integer"
+        },
+        "max_same_agent_retries": {
+          "default": 2,
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Max Same Agent Retries",
+          "type": "integer"
+        },
+        "max_schema_retries": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Max Schema Retries",
+          "type": "integer"
+        },
+        "max_verifier_cycles": {
+          "default": 2,
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Max Verifier Cycles",
+          "type": "integer"
+        }
+      },
+      "title": "RetryLimits",
+      "type": "object"
+    },
+    "SenderRole": {
+      "enum": [
+        "intake_spec",
+        "planner_orchestrator",
+        "research",
+        "executor",
+        "verifier"
+      ],
+      "title": "SenderRole",
+      "type": "string"
+    }
+  },
+  "$id": "https://schemas.intake-spec-agent.local/v1/handoff.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptance_criteria": {
+      "items": {
+        "maxLength": 8000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Acceptance Criteria",
+      "type": "array"
+    },
+    "artifact_refs": {
+      "items": {
+        "maxLength": 1024,
+        "minLength": 1,
+        "pattern": "^[a-z][a-z0-9+.-]*://[^\\s]+$",
+        "type": "string"
+      },
+      "title": "Artifact Refs",
+      "type": "array"
+    },
+    "budget": {
+      "$ref": "#/$defs/Budget"
+    },
+    "constraints": {
+      "items": {
+        "maxLength": 8000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Constraints",
+      "type": "array"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ErrorDetail"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "evidence_refs": {
+      "items": {
+        "maxLength": 1024,
+        "minLength": 1,
+        "pattern": "^[a-z][a-z0-9+.-]*://[^\\s]+$",
+        "type": "string"
+      },
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "expected_output_schema": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9+.-]*://[^\\s]+$",
+      "title": "Expected Output Schema",
+      "type": "string"
+    },
+    "failure_policy": {
+      "$ref": "#/$defs/FailurePolicy"
+    },
+    "input_refs": {
+      "items": {
+        "maxLength": 1024,
+        "minLength": 1,
+        "pattern": "^[a-z][a-z0-9+.-]*://[^\\s]+$",
+        "type": "string"
+      },
+      "title": "Input Refs",
+      "type": "array"
+    },
+    "message_type": {
+      "$ref": "#/$defs/MessageType"
+    },
+    "next_action": {
+      "anyOf": [
+        {
+          "maxLength": 8000,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Next Action"
+    },
+    "objective": {
+      "maxLength": 8000,
+      "minLength": 1,
+      "title": "Objective",
+      "type": "string"
+    },
+    "parent_task_id": {
+      "anyOf": [
+        {
+          "pattern": "^TASK-[A-Z0-9][A-Z0-9_-]{2,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Task Id"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "permissions": {
+      "items": {
+        "maxLength": 8000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Permissions",
+      "type": "array"
+    },
+    "reason_for_delegation": {
+      "maxLength": 8000,
+      "minLength": 1,
+      "title": "Reason For Delegation",
+      "type": "string"
+    },
+    "recipient": {
+      "$ref": "#/$defs/RecipientRole"
+    },
+    "schema_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sender": {
+      "$ref": "#/$defs/SenderRole"
+    },
+    "status": {
+      "$ref": "#/$defs/AgentStatus"
+    },
+    "task_id": {
+      "pattern": "^TASK-[A-Z0-9][A-Z0-9_-]{2,63}$",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "task_spec_ref": {
+      "maxLength": 1024,
+      "minLength": 1,
+      "pattern": "^[a-z][a-z0-9+.-]*://[^\\s]+$",
+      "title": "Task Spec Ref",
+      "type": "string"
+    },
+    "trace_id": {
+      "pattern": "^TRACE-[A-Z0-9][A-Z0-9_-]{2,63}$",
+      "title": "Trace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "trace_id",
+    "task_id",
+    "sender",
+    "recipient",
+    "message_type",
+    "status",
+    "objective",
+    "task_spec_ref",
+    "reason_for_delegation",
+    "expected_output_schema"
+  ],
+  "title": "HandoffEnvelope",
+  "type": "object"
+}

@@ -1,0 +1,10 @@
+# 安装脚本会将以下表结构化合并到目标 Codex 配置，不会覆盖其他配置。
+[mcp_servers.intake_spec_mcp]
+command = "/ABSOLUTE/PATH/TO/intake-spec-agent/runtime/.venv/bin/python"
+args = ["-m", "intake_spec_agent.mcp_server.server"]
+cwd = "/ABSOLUTE/PATH/TO/intake-spec-agent/runtime"
+env = { INTAKE_SPEC_DATA_DIR = "/ABSOLUTE/PATH/TO/intake-spec-agent/data" }
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 45
+default_tools_approval_mode = "writes"
