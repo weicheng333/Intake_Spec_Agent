@@ -1,10 +1,11 @@
 import os
 import shutil
 import sys
+import re
 from pathlib import Path
 from uuid import uuid4
 
-from package_manager import install_package, resolve_layout, uninstall_package
+from package_manager import PACKAGE_ROOT, install_package, resolve_layout, uninstall_package
 
 
 def _fake_runtime_builder(source: Path, destination: Path, python: Path) -> Path | None:
@@ -31,11 +32,12 @@ def test_project_install_and_uninstall_preserve_other_agent_and_data(tmp_path: P
     layout = resolve_layout("project", project)
 
     first = install_package(layout, Path(sys.executable), runtime_builder=_fake_runtime_builder)
-    second = install_package(layout, Path(sys.executable), runtime_builder=_fake_runtime_builder)
     (layout.data / "keep.sqlite3").write_text("user data")
+    second = install_package(layout, Path(sys.executable), runtime_builder=_fake_runtime_builder)
+    assert (layout.data / "keep.sqlite3").read_text() == "user data"
 
-    assert first["version"] == "1.1.0"
-    assert second["version"] == "1.1.0"
+    assert first["version"] == "1.2.0"
+    assert second["version"] == "1.2.0"
     assert layout.agent.exists() and layout.skill.exists() and layout.manifest.exists()
     assert "intake_spec_mcp" in config.read_text()
     messages = uninstall_package(layout)
@@ -46,6 +48,22 @@ def test_project_install_and_uninstall_preserve_other_agent_and_data(tmp_path: P
     assert not layout.agent.exists() and not layout.skill.exists() and not layout.runtime.exists()
     assert (layout.data / "keep.sqlite3").exists()
     assert any("已保留数据" in message for message in messages)
+
+
+def test_upgrade_installs_complete_skill_and_referenced_resources(tmp_path: Path) -> None:
+    layout = resolve_layout("project", tmp_path / "consumer")
+    install_package(layout, Path(sys.executable), runtime_builder=_fake_runtime_builder)
+    source_skill = PACKAGE_ROOT / ".agents" / "skills" / "intake-spec"
+    for source in source_skill.rglob("*"):
+        if not source.is_file():
+            continue
+        installed = layout.skill / source.relative_to(source_skill)
+        assert installed.read_bytes() == source.read_bytes()
+        if source.suffix == ".md":
+            for relative in re.findall(r"\]\((references/[^)]+\.md)\)", source.read_text()):
+                assert (layout.skill / relative).is_file()
+    assert (layout.skill / "references" / "clarification-flow.md").is_file()
+    assert layout.agent.read_bytes() == (PACKAGE_ROOT / ".codex/agents/intake_spec.toml").read_bytes()
 
 
 def test_uninstall_preserves_modified_skill(tmp_path: Path) -> None:

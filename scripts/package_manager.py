@@ -19,7 +19,7 @@ from uuid import uuid4
 from merge_codex_config import install_config, uninstall_config
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 
 class PackageManagerError(RuntimeError):
