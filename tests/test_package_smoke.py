@@ -7,12 +7,12 @@ from package_manager import VERSION
 
 
 def test_package_exposes_version() -> None:
-    assert __version__ == "1.2.0"
+    assert __version__ == "1.2.1"
 
 
 def test_cli_reports_version(capsys) -> None:
     assert main() == 0
-    assert capsys.readouterr().out == "Intake & Spec Agent 1.2.0\n"
+    assert capsys.readouterr().out == "Intake & Spec Agent 1.2.1\n"
 
 
 def test_package_and_installer_versions_match() -> None:

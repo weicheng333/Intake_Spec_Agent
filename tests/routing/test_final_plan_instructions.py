@@ -44,3 +44,20 @@ def test_custom_agent_preserves_confirmation_gate() -> None:
     assert "仅选择继续不增加版本或写入" in instructions
     assert "只有用户确认当前 revision" in instructions
     assert "initialize_confirmed_task_spec" in instructions
+
+
+def test_presentation_failure_does_not_remove_question_contract() -> None:
+    skill = (ROOT / ".agents/skills/intake-spec/SKILL.md").read_text()
+    for rule in (
+        "默认使用普通文字对话", "不代表要求单题", "二至五个可以独立回答",
+        "后题依赖前题答案", "不能只把选项放在弹窗", "不把默认项记为用户答案",
+    ):
+        assert rule in skill
+
+
+def test_host_constraints_are_not_overridden_by_skill() -> None:
+    skill = (ROOT / ".agents/skills/intake-spec/SKILL.md").read_text()
+    agent = tomllib.loads((ROOT / ".codex/agents/intake_spec.toml").read_text())
+    assert "不要修改 Skill 绕过" in skill
+    assert "不得承诺已恢复文字多选" in skill
+    assert "宿主不允许文字多选时应说明限制" in agent["developer_instructions"]

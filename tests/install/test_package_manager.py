@@ -36,8 +36,8 @@ def test_project_install_and_uninstall_preserve_other_agent_and_data(tmp_path: P
     second = install_package(layout, Path(sys.executable), runtime_builder=_fake_runtime_builder)
     assert (layout.data / "keep.sqlite3").read_text() == "user data"
 
-    assert first["version"] == "1.2.0"
-    assert second["version"] == "1.2.0"
+    assert first["version"] == "1.2.1"
+    assert second["version"] == "1.2.1"
     assert layout.agent.exists() and layout.skill.exists() and layout.manifest.exists()
     assert "intake_spec_mcp" in config.read_text()
     messages = uninstall_package(layout)
